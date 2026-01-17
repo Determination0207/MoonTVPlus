@@ -4,6 +4,7 @@ import { X, Calendar, Star, Clock, Tag, Users, Globe, Film } from 'lucide-react'
 import Image from 'next/image';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { getTMDBImageUrl } from '@/lib/tmdb.client';
 
 interface DetailPanelProps {
   isOpen: boolean;
@@ -372,7 +373,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                   ? detailResult.release_date?.substring(0, 4)
                   : detailResult.first_air_date?.substring(0, 4),
               poster: detailResult.poster_path
-                ? `https://image.tmdb.org/t/p/w500${detailResult.poster_path}`
+                ? getTMDBImageUrl(detailResult.poster_path, 'w500')
                 : poster,
               rating: detailResult.vote_average
                 ? {
@@ -480,7 +481,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
         ...prev,
         title: episodesData.name || season?.name || prev.title,
         intro: episodesData.overview || season?.overview || prev.overview,
-        poster: season?.poster_path ? `https://image.tmdb.org/t/p/w500${season.poster_path}` : prev.poster,
+        poster: season?.poster_path ? getTMDBImageUrl(season.poster_path, 'w500') : prev.poster,
         releaseDate: episodesData.air_date || season?.air_date || prev.releaseDate,
         year: episodesData.air_date?.substring(0, 4) || season?.air_date?.substring(0, 4) || prev.year,
         episodesCount: episodesData.episodes?.length || season?.episode_count || prev.episodesCount,
@@ -732,7 +733,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                                 {season.poster_path && (
                                   <div className="relative w-12 h-16 rounded overflow-hidden bg-gray-200 dark:bg-gray-700 flex-shrink-0">
                                     <Image
-                                      src={`https://image.tmdb.org/t/p/w92${season.poster_path}`}
+                                      src={getTMDBImageUrl(season.poster_path, 'w92')}
                                       alt={season.name}
                                       fill
                                       className="object-cover"
@@ -771,7 +772,7 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
                                     {episode.still_path && (
                                       <div className="relative w-full h-36 rounded overflow-hidden bg-gray-200 dark:bg-gray-700 mb-2">
                                         <Image
-                                          src={`https://image.tmdb.org/t/p/w300${episode.still_path}`}
+                                          src={getTMDBImageUrl(episode.still_path, 'w300')}
                                           alt={episode.name}
                                           fill
                                           className="object-cover"

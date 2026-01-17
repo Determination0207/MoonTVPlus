@@ -119,6 +119,9 @@ export const UserMenu: React.FC = () => {
 
   // 折叠面板状态
   const [isDoubanSectionOpen, setIsDoubanSectionOpen] = useState(true);
+
+  // TMDB 图片设置
+  const [tmdbImageBaseUrl, setTmdbImageBaseUrl] = useState('https://image.tmdb.org');
   const [isUsageSectionOpen, setIsUsageSectionOpen] = useState(false);
   const [isBufferSectionOpen, setIsBufferSectionOpen] = useState(false);
   const [isDanmakuSectionOpen, setIsDanmakuSectionOpen] = useState(false);
@@ -337,6 +340,11 @@ export const UserMenu: React.FC = () => {
         setDoubanImageProxyUrl(savedDoubanImageProxyUrl);
       } else if (defaultDoubanImageProxyUrl) {
         setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
+      }
+
+      const savedTmdbImageBaseUrl = localStorage.getItem('tmdbImageBaseUrl');
+      if (savedTmdbImageBaseUrl !== null) {
+        setTmdbImageBaseUrl(savedTmdbImageBaseUrl);
       }
 
       const savedEnableOptimization =
@@ -704,6 +712,13 @@ export const UserMenu: React.FC = () => {
     }
   };
 
+  const handleTmdbImageBaseUrlChange = (value: string) => {
+    setTmdbImageBaseUrl(value);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tmdbImageBaseUrl', value);
+    }
+  };
+
   const handleBufferStrategyChange = (value: string) => {
     setBufferStrategy(value);
     if (typeof window !== 'undefined') {
@@ -833,6 +848,7 @@ export const UserMenu: React.FC = () => {
     setDoubanDataSource(defaultDoubanProxyType);
     setDoubanImageProxyType(defaultDoubanImageProxyType);
     setDoubanImageProxyUrl(defaultDoubanImageProxyUrl);
+    setTmdbImageBaseUrl('https://image.tmdb.org');
     setBufferStrategy('medium');
     setNextEpisodePreCache(true);
     setNextEpisodeDanmakuPreload(true);
@@ -850,6 +866,7 @@ export const UserMenu: React.FC = () => {
       localStorage.setItem('doubanDataSource', defaultDoubanProxyType);
       localStorage.setItem('doubanImageProxyType', defaultDoubanImageProxyType);
       localStorage.setItem('doubanImageProxyUrl', defaultDoubanImageProxyUrl);
+      localStorage.setItem('tmdbImageBaseUrl', 'https://image.tmdb.org');
       localStorage.setItem('bufferStrategy', 'medium');
       localStorage.setItem('nextEpisodePreCache', 'true');
       localStorage.setItem('nextEpisodeDanmakuPreload', 'true');
@@ -1167,7 +1184,7 @@ export const UserMenu: React.FC = () => {
                 className='w-full px-3 py-2.5 md:px-4 md:py-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-750 transition-colors flex items-center justify-between'
               >
                 <h3 className='text-base font-semibold text-gray-800 dark:text-gray-200'>
-                  豆瓣设置
+                  网络设置
                 </h3>
                 {isDoubanSectionOpen ? (
                   <ChevronUp className='w-5 h-5 text-gray-600 dark:text-gray-400' />
@@ -1384,6 +1401,30 @@ export const UserMenu: React.FC = () => {
                       />
                     </div>
                   )}
+
+                  {/* 分割线 */}
+                  <div className='border-t border-gray-200 dark:border-gray-700'></div>
+
+                  {/* TMDB 图片网络请求地址设置 */}
+                  <div className='space-y-3'>
+                    <div>
+                      <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                        TMDB 图片网络请求地址
+                      </h4>
+                      <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                        TMDB 图片的 Base URL（默认: https://image.tmdb.org）
+                      </p>
+                    </div>
+                    <input
+                      type='text'
+                      className='w-full px-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 shadow-sm hover:border-gray-400 dark:hover:border-gray-500'
+                      placeholder='例如: https://image.tmdb.org'
+                      value={tmdbImageBaseUrl}
+                      onChange={(e) =>
+                        handleTmdbImageBaseUrlChange(e.target.value)
+                      }
+                    />
+                  </div>
                 </div>
               )}
             </div>

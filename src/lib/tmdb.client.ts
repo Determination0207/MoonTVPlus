@@ -403,7 +403,10 @@ export function getTMDBImageUrl(
   size: string = 'w500'
 ): string {
   if (!path) return '';
-  return `https://image.tmdb.org/t/p/${size}${path}`;
+  const baseUrl = typeof window !== 'undefined'
+    ? localStorage.getItem('tmdbImageBaseUrl') || 'https://image.tmdb.org'
+    : 'https://image.tmdb.org';
+  return `${baseUrl}/t/p/${size}${path}`;
 }
 
 /**

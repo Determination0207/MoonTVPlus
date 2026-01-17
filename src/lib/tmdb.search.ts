@@ -226,5 +226,8 @@ export function getTMDBImageUrl(
     return path;
   }
 
-  return `https://image.tmdb.org/t/p/${size}${path}`;
+  const baseUrl = typeof window !== 'undefined'
+    ? localStorage.getItem('tmdbImageBaseUrl') || 'https://image.tmdb.org'
+    : 'https://image.tmdb.org';
+  return `${baseUrl}/t/p/${size}${path}`;
 }
