@@ -7392,6 +7392,37 @@ function PlayPageClient() {
                           </span>
                         </button>
 
+                        {/* App打开 */}
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            // 获取当前浏览器URL去除域名部分，并去除开头的/
+                            const currentPath = (window.location.pathname + window.location.search).replace(/^\//, '');
+                            // 打开moontvplus协议
+                            window.open(`moontvplus://${currentPath}`, '_blank');
+                          }}
+                          className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-blue-500 hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-blue-600 dark:border-blue-700 flex-shrink-0'
+                          title='App打开'
+                        >
+                          <svg
+                            className='w-4 h-4 flex-shrink-0 text-white'
+                            fill='none'
+                            stroke='currentColor'
+                            viewBox='0 0 24 24'
+                            xmlns='http://www.w3.org/2000/svg'
+                          >
+                            <path
+                              strokeLinecap='round'
+                              strokeLinejoin='round'
+                              strokeWidth={2}
+                              d='M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z'
+                            />
+                          </svg>
+                          <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-white'>
+                            App打开
+                          </span>
+                        </button>
+
                         {/* PotPlayer */}
                         <button
                           onClick={(e) => {
