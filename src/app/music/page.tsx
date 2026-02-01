@@ -12,6 +12,14 @@ interface Song {
   pic?: string;
 }
 
+interface PlayRecord {
+  platform: 'netease' | 'qq' | 'kuwo';
+  id: string;
+  playTime: number; // 播放时间（秒）
+  duration: number; // 总时长（秒）
+  timestamp: number; // 添加时间戳
+}
+
 interface LyricLine {
   time: number;
   text: string;
@@ -46,6 +54,11 @@ export default function MusicPage() {
   const [lyrics, setLyrics] = useState<LyricLine[]>([]);
   const [currentLyricIndex, setCurrentLyricIndex] = useState(-1);
   const [currentSongUrl, setCurrentSongUrl] = useState('');
+  const [playRecords, setPlayRecords] = useState<PlayRecord[]>([]); // 播放记录（只存平台和ID）
+  const [playlist, setPlaylist] = useState<Song[]>([]); // 完整歌曲信息（用于显示）
+  const [showPlaylist, setShowPlaylist] = useState(false);
+  const [playlistIndex, setPlaylistIndex] = useState(-1); // 当前在播放列表中的索引
+  const [showQualityMenu, setShowQualityMenu] = useState(false); // 音质选择菜单
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +82,9 @@ export default function MusicPage() {
       currentTime: audioRef.current?.currentTime || 0,
       currentSongUrl,
       lyrics,
+      playRecords, // 只保存播放记录（平台+ID+播放信息）
+      playlist, // 保存完整歌曲信息（用于显示）
+      playlistIndex,
     };
 
     localStorage.setItem('musicPlayState', JSON.stringify(playState));
@@ -93,6 +109,9 @@ export default function MusicPage() {
       setVolume(playState.volume || 100);
       setCurrentSongUrl(playState.currentSongUrl || '');
       setLyrics(playState.lyrics || []);
+      setPlayRecords(playState.playRecords || []);
+      setPlaylist(playState.playlist || []); // 恢复播放列表
+      setPlaylistIndex(playState.playlistIndex || -1);
 
       // 保存需要恢复的时间点
       restoredTimeRef.current = playState.currentTime || 0;
@@ -103,7 +122,21 @@ export default function MusicPage() {
         setTimeout(() => {
           if (audioRef.current && playState.currentSongUrl) {
             audioRef.current.src = playState.currentSongUrl;
-            // currentTime 会在 loadedmetadata 事件中设置
+
+            // 监听多个事件以确保进度恢复
+            const restoreTime = () => {
+              if (audioRef.current && restoredTimeRef.current > 0) {
+                audioRef.current.currentTime = restoredTimeRef.current;
+                restoredTimeRef.current = 0;
+              }
+            };
+
+            // 监听加载完成事件
+            audioRef.current.addEventListener('loadedmetadata', restoreTime, { once: true });
+            audioRef.current.addEventListener('canplay', restoreTime, { once: true });
+
+            // 调用 load() 触发音频加载
+            audioRef.current.load();
           }
         }, 100);
       }
@@ -122,7 +155,7 @@ export default function MusicPage() {
     if (currentSong) {
       savePlayState();
     }
-  }, [currentSong, currentSongIndex, songs, currentPlaylistTitle, currentSource, currentView, quality, playMode, volume, currentSongUrl, lyrics]);
+  }, [currentSong, currentSongIndex, songs, currentPlaylistTitle, currentSource, currentView, quality, playMode, volume, currentSongUrl, lyrics, playRecords, playlistIndex]);
 
   // 加载排行榜列表
   const loadPlaylists = async (source: string) => {
@@ -298,6 +331,43 @@ export default function MusicPage() {
       setShowPlayer(true);
       setLyrics([]); // 清空旧歌词
 
+      // 添加到播放记录和播放列表
+      const record: PlayRecord = {
+        platform: currentSource,
+        id: song.id,
+        playTime: 0, // 初始播放时间
+        duration: 0, // 将在音频加载后更新
+        timestamp: Date.now(),
+      };
+
+      setPlayRecords(prev => {
+        const existingIndex = prev.findIndex(r => r.platform === record.platform && r.id === record.id);
+        if (existingIndex >= 0) {
+          // 记录已存在，更新时间戳
+          const updated = [...prev];
+          updated[existingIndex] = {
+            ...updated[existingIndex],
+            timestamp: Date.now(),
+          };
+          setPlaylistIndex(existingIndex);
+          return updated;
+        } else {
+          // 新记录，添加到列表末尾
+          const newRecords = [...prev, record];
+          setPlaylistIndex(newRecords.length - 1);
+          return newRecords;
+        }
+      });
+
+      setPlaylist(prev => {
+        const existingIndex = prev.findIndex(s => s.id === song.id);
+        if (existingIndex >= 0) {
+          return prev;
+        } else {
+          return [...prev, song];
+        }
+      });
+
       // 调用解析接口获取播放链接
       const response = await fetch('/api/music', {
         method: 'POST',
@@ -404,14 +474,24 @@ export default function MusicPage() {
 
   // 上一曲
   const playPrev = () => {
-    if (currentSongIndex > 0) {
+    // 优先从播放列表切换
+    if (playlist.length > 0 && playlistIndex > 0) {
+      const prevIndex = playlistIndex - 1;
+      setPlaylistIndex(prevIndex);
+      playSong(playlist[prevIndex], -1);
+    } else if (currentSongIndex > 0) {
       playSong(songs[currentSongIndex - 1], currentSongIndex - 1);
     }
   };
 
   // 下一曲
   const playNext = () => {
-    if (currentSongIndex < songs.length - 1) {
+    // 优先从播放列表切换
+    if (playlist.length > 0 && playlistIndex < playlist.length - 1) {
+      const nextIndex = playlistIndex + 1;
+      setPlaylistIndex(nextIndex);
+      playSong(playlist[nextIndex], -1);
+    } else if (currentSongIndex < songs.length - 1) {
       playSong(songs[currentSongIndex + 1], currentSongIndex + 1);
     }
   };
@@ -484,10 +564,25 @@ export default function MusicPage() {
         setCurrentLyricIndex(index);
       }
 
-      // 每20秒保存一次播放进度
+      // 每20秒保存一次播放进度和播放时间
       const now = Date.now();
       if (now - lastSaveTimeRef.current > 20000) {
         lastSaveTimeRef.current = now;
+
+        // 更新当前播放记录的播放时间
+        if (currentSong && playlistIndex >= 0) {
+          setPlayRecords(prev => {
+            const updated = [...prev];
+            if (updated[playlistIndex]) {
+              updated[playlistIndex] = {
+                ...updated[playlistIndex],
+                playTime: audio.currentTime,
+              };
+            }
+            return updated;
+          });
+        }
+
         savePlayState();
       }
     };
@@ -500,7 +595,23 @@ export default function MusicPage() {
       }
     };
 
-    const handleDurationChange = () => setDuration(audio.duration);
+    const handleDurationChange = () => {
+      setDuration(audio.duration);
+
+      // 更新当前播放记录的总时长
+      if (currentSong && playlistIndex >= 0) {
+        setPlayRecords(prev => {
+          const updated = [...prev];
+          if (updated[playlistIndex]) {
+            updated[playlistIndex] = {
+              ...updated[playlistIndex],
+              duration: audio.duration,
+            };
+          }
+          return updated;
+        });
+      }
+    };
     const handleEnded = () => {
       if (playMode === 'single') {
         audio.currentTime = 0;
@@ -862,12 +973,6 @@ export default function MusicPage() {
                   </svg>
                 </button>
                 <button
-                  onClick={cycleQuality}
-                  className="px-2 py-0.5 rounded border text-amber-400 border-amber-500/50 bg-amber-900/20 text-[9px] font-mono min-w-[32px] text-center"
-                >
-                  {getQualityLabel()}
-                </button>
-                <button
                   onClick={toggleMode}
                   className="text-zinc-500 hover:text-white transition-colors"
                   title={playMode === 'loop' ? '列表循环' : playMode === 'single' ? '单曲循环' : '随机播放'}
@@ -1005,6 +1110,20 @@ export default function MusicPage() {
               {/* 下排：其他按钮（小一号） */}
               <div className="flex items-center justify-center gap-3 md:gap-4 mb-2 md:mb-3">
                 <button
+                  onClick={() => setShowPlaylist(true)}
+                  className="text-zinc-500 hover:text-white transition-colors relative"
+                  title="播放列表"
+                >
+                  <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  {playlist.length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full text-[8px] flex items-center justify-center font-bold">
+                      {playlist.length > 9 ? '9+' : playlist.length}
+                    </span>
+                  )}
+                </button>
+                <button
                   onClick={downloadSong}
                   className="text-zinc-500 hover:text-white transition-colors"
                   title="下载歌曲"
@@ -1012,6 +1131,13 @@ export default function MusicPage() {
                   <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
+                </button>
+                <button
+                  onClick={() => setShowQualityMenu(true)}
+                  className="px-2 py-0.5 rounded border text-amber-400 border-amber-500/50 bg-amber-900/20 text-[9px] md:text-[10px] font-mono min-w-[32px] text-center hover:bg-amber-900/30 transition-colors"
+                  title="音质选择"
+                >
+                  {getQualityLabel()}
                 </button>
                 <button
                   onClick={toggleMode}
@@ -1060,6 +1186,221 @@ export default function MusicPage() {
                   <span>{formatTime(duration)}</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Playlist Modal */}
+      {showPlaylist && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl h-[90vh] md:h-auto max-h-[90vh] bg-zinc-900/95 rounded-2xl overflow-hidden border border-white/10 shadow-2xl flex flex-col">
+            {/* Header */}
+            <div className="relative h-16 bg-gradient-to-b from-zinc-800 to-zinc-900 shrink-0 flex items-center justify-between px-6">
+              <h2 className="text-lg font-bold text-white">播放列表</h2>
+              <button
+                onClick={() => setShowPlaylist(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              >
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Playlist */}
+            <div className="flex-1 overflow-y-auto p-4 md:p-6">
+              {playlist.length > 0 ? (
+                <div className="space-y-2">
+                  {playlist.map((song, index) => (
+                    <div
+                      key={`${song.id}-${index}`}
+                      onClick={() => {
+                        setPlaylistIndex(index);
+                        playSong(song, -1);
+                        setShowPlaylist(false);
+                      }}
+                      className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors group ${
+                        index === playlistIndex
+                          ? 'bg-green-500/20 border border-green-500/50'
+                          : 'bg-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-lg bg-zinc-800 overflow-hidden shrink-0">
+                        {song.pic ? (
+                          <img
+                            src={song.pic}
+                            alt={song.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <svg className="w-6 h-6 text-zinc-600" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+                            </svg>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-medium truncate transition-colors ${
+                          index === playlistIndex ? 'text-green-400' : 'text-white group-hover:text-green-400'
+                        }`}>
+                          {song.name}
+                        </div>
+                        <div className="text-xs text-zinc-500 truncate">{song.artist}</div>
+                      </div>
+                      {index === playlistIndex ? (
+                        <svg className="w-5 h-5 text-green-400 shrink-0 animate-pulse" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z" />
+                        </svg>
+                      ) : (
+                        <svg className="w-5 h-5 text-zinc-600 group-hover:text-white transition-colors shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                        </svg>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center">
+                  <svg className="w-16 h-16 text-zinc-700 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                  </svg>
+                  <p className="text-zinc-500 text-sm">播放列表为空</p>
+                  <p className="text-zinc-600 text-xs mt-2">播放歌曲后会自动添加到列表</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quality Selection Menu */}
+      {showQualityMenu && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-end justify-center"
+          onClick={() => setShowQualityMenu(false)}
+        >
+          <div
+            className="w-full max-w-md bg-zinc-900 rounded-t-2xl border-t border-white/10 shadow-2xl animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-4 border-b border-white/10">
+              <h3 className="text-lg font-bold text-white text-center">选择音质</h3>
+            </div>
+
+            {/* Quality Options */}
+            <div className="p-4 space-y-2">
+              <button
+                onClick={() => {
+                  setQuality('128k');
+                  setShowQualityMenu(false);
+                }}
+                className={`w-full p-4 rounded-lg flex items-center justify-between transition-colors ${
+                  quality === '128k'
+                    ? 'bg-amber-500/20 border border-amber-500/50'
+                    : 'bg-white/5 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${quality === '128k' ? 'bg-amber-400' : 'bg-zinc-600'}`} />
+                  <div className="text-left">
+                    <div className="text-white font-medium">标准音质</div>
+                    <div className="text-xs text-zinc-500">128kbps</div>
+                  </div>
+                </div>
+                {quality === '128k' && (
+                  <svg className="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setQuality('320k');
+                  setShowQualityMenu(false);
+                }}
+                className={`w-full p-4 rounded-lg flex items-center justify-between transition-colors ${
+                  quality === '320k'
+                    ? 'bg-amber-500/20 border border-amber-500/50'
+                    : 'bg-white/5 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${quality === '320k' ? 'bg-amber-400' : 'bg-zinc-600'}`} />
+                  <div className="text-left">
+                    <div className="text-white font-medium">高品质 HQ</div>
+                    <div className="text-xs text-zinc-500">320kbps</div>
+                  </div>
+                </div>
+                {quality === '320k' && (
+                  <svg className="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setQuality('flac');
+                  setShowQualityMenu(false);
+                }}
+                className={`w-full p-4 rounded-lg flex items-center justify-between transition-colors ${
+                  quality === 'flac'
+                    ? 'bg-amber-500/20 border border-amber-500/50'
+                    : 'bg-white/5 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${quality === 'flac' ? 'bg-amber-400' : 'bg-zinc-600'}`} />
+                  <div className="text-left">
+                    <div className="text-white font-medium">无损音质 SQ</div>
+                    <div className="text-xs text-zinc-500">FLAC</div>
+                  </div>
+                </div>
+                {quality === 'flac' && (
+                  <svg className="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+
+              <button
+                onClick={() => {
+                  setQuality('flac24bit');
+                  setShowQualityMenu(false);
+                }}
+                className={`w-full p-4 rounded-lg flex items-center justify-between transition-colors ${
+                  quality === 'flac24bit'
+                    ? 'bg-amber-500/20 border border-amber-500/50'
+                    : 'bg-white/5 hover:bg-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${quality === 'flac24bit' ? 'bg-amber-400' : 'bg-zinc-600'}`} />
+                  <div className="text-left">
+                    <div className="text-white font-medium">Hi-Res音质 HR</div>
+                    <div className="text-xs text-zinc-500">FLAC 24bit</div>
+                  </div>
+                </div>
+                {quality === 'flac24bit' && (
+                  <svg className="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                )}
+              </button>
+            </div>
+
+            {/* Cancel Button */}
+            <div className="p-4 pt-0">
+              <button
+                onClick={() => setShowQualityMenu(false)}
+                className="w-full p-3 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors"
+              >
+                取消
+              </button>
             </div>
           </div>
         </div>
